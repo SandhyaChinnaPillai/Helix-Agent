@@ -1,0 +1,8 @@
+Flask
+Flask-SocketIO
+openai
+instructor
+flask-cors
+eventlet
+python-dotenv
+eval-type-backport
