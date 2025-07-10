@@ -55,13 +55,17 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         });
 
         socket.on("chat_message", (data) => {
-            setToolNotification(null);
-            setChat((prev) => [...prev, { role: data.role, content: data.message }]);
+            setTimeout(() => {
+                setToolNotification(null); // Clear toolNotification after delay
+                setChat((prev) => [...prev, { role: data.role, content: data.message }]);
+            }, 2000);
         });
 
         socket.on("sequence_updated", (data) => {
-            setToolNotification(null);
-            setSequence(data.sequence);
+            setTimeout(() => {
+                setToolNotification(null); // Clear toolNotification after delay
+                setSequence(data.sequence);
+            }, 2000);
         });
 
         socket.connect();
@@ -73,8 +77,12 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     }, []);
 
     const sendMessage = (msg: string) => {
+        // socketRef.current?.emit("leave_session", { session_id: sessionId });
+        // socketRef.current?.disconnect();
+        // return;
         socketRef.current?.emit("chat_message", { session_id: sessionId, message: msg });
         setChat((prev) => [...prev, { role: "user", content: msg }]);
+
     };
 
     const sendSequenceUpdate = (msgId: string, newContent: string) => {
