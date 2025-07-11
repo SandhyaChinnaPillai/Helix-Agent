@@ -29,6 +29,7 @@ HELIX is an application that combines real-time communication with agentic decis
 - **Socket.IO Client**: Real-time client communication
 
 ## Architecture
+<img width="2187" height="1225" alt="image" src="https://github.com/user-attachments/assets/1f568578-4f07-4e27-b47f-4614c23022a6" />
 
 ### Core Components
 
@@ -104,6 +105,7 @@ pip install -r requirements.txt
 
 4. Install frontend dependencies and build
 ```bash
+cd into /client
 pnpm install
 pnpm build
 ```
@@ -119,11 +121,9 @@ pnpm run dev
 
 ## Usage
 
-1. Access the application in your browser
-2. Start a new session or continue an existing one
-3. Interact with the AI agent to generate recruitment sequences
-4. Use the available tools to manage your outreach messages
-5. Finalize sequences to save them to the database
+1. Access the application in your browser localhost:3000
+2. Interact with the AI agent to generate recruitment sequences
+3. Finalize sequences to save them to the database
 
 ## Roadmap
 
