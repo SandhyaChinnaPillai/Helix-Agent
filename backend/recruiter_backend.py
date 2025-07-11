@@ -17,8 +17,8 @@ import json
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
-from openai import OpenAI
 import openai
+from openai import OpenAI
 from dataclasses import asdict
 import instructor
 
@@ -46,6 +46,17 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 # =============================================================================
 # Socket Management
 # =============================================================================
+
+"""
+    Manages WebSocket communication for real-time updates in the outreach messaging system.
+    
+    This class provides functionality to emit various types of messages to connected clients
+    via Socket.IO, including sequence updates, chat messages, and tool call notifications.
+    All emissions are sent to specific rooms based on session IDs for targeted communication.
+    
+    Attributes:
+        socketio: The Socket.IO server instance used for WebSocket communication.
+    """
 
 
 class SocketManager:
@@ -83,6 +94,16 @@ class SocketManager:
 # =============================================================================
 # State Management
 # =============================================================================
+
+"""
+Manages conversation sessions and their associated states in the outreach messaging system.
+This class provides functionality to create, retrieve, and update session data, including 
+user information and conversation history. It also handles persistence to a SQLite database.
+
+Attributes:
+    sessions (Dict[str, ConversationState]): Dictionary mapping session IDs to their 
+        corresponding ConversationState objects.
+"""
 
 
 class StateManager:
@@ -172,13 +193,76 @@ class StateManager:
 # Tool Definitions
 # =============================================================================
 
+"""
+ToolManager - Agentic Tool Schema & Execution Engine
+
+This class implements the tool layer of HELIX's agentic architecture, providing
+the AI agent with a comprehensive set of tools for recruitment workflow management.
+Unlike framework-based solutions, this implements custom tool definitions and
+execution patterns tailored specifically for recruitment use cases.
+
+Key Agentic Tool Principles:
+- Declarative tool schemas that guide LLM decision-making
+- Context-aware parameter validation and execution
+- Real-time feedback during tool execution
+- Stateful tool operations that maintain workflow continuity
+- Error handling with graceful degradation
+
+Tool Architecture Pattern:
+Schema Definition → Agent Decision → Parameter Validation → Execution → State Update → Feedback
+"""
+
 
 class ToolManager:
+    """
+    Custom tool management system for agentic recruitment workflows.
+
+    This manager provides the AI agent with a comprehensive toolkit for recruitment
+    sequence management, implementing custom tool schemas and execution logic
+    without relying on existing agentic frameworks.
+
+    The tool system enables the agent to:
+    - Generate personalized outreach sequences
+    - Edit existing messages based on natural language instructions
+    - Add new messages to sequences intelligently
+    - Delete specific messages with proper reordering
+    - Finalize sequences with database persistence
+
+    Each tool is designed to work autonomously while maintaining conversation
+    context and providing real-time feedback to users.
+
+    Attributes:
+        state_manager: Manages session state and conversation persistence
+        socket_manager: Provides real-time communication during tool execution
+    """
+
     def __init__(self, state_manager: StateManager, socket_manager: SocketManager):
         self.state_manager = state_manager
         self.socket_manager = socket_manager
 
     def get_tools_schema(self) -> List[Dict]:
+        """
+        Returns comprehensive tool schema for LLM decision-making.
+
+        This method defines the complete toolkit available to the AI agent.
+        Each tool schema includes:
+        - Clear descriptions for autonomous tool selection
+        - Parameter definitions with validation rules
+        - Required vs optional parameters for flexible execution
+        - Context-aware parameter descriptions
+
+        The schema design enables the LLM to make intelligent decisions about
+        which tools to use and how to parameterize them based on user intent.
+
+        Returns:
+            List[Dict]: OpenAI-compatible tool schema definitions
+
+        Tool Categories:
+            - Content Generation: generate_sequence
+            - Content Modification: edit_sequence, add_to_sequence
+            - Content Management: delete_sequence
+            - Workflow Control: finalize_sequence
+        """
         return [
             {
                 "type": "function",
@@ -346,9 +430,29 @@ class ToolManager:
             return {"error": str(e)}
 
     def _generate_sequence(self, session: ConversationState, parameters: Dict) -> Dict:
-        """Generate outreach message sequence"""
+        """
+        Generate personalized outreach sequence using AI.
 
-        # Update user info
+        This tool creates a complete recruitment sequence tailored to the
+        specified company, role, and context. It updates session state
+        with user information and generates 4-5 progressive messages.
+
+        Generation Process:
+        1. Update session with user information
+        2. Create AI-generated message sequence
+        3. Update session state and phase
+        4. Emit real-time update to frontend
+        5. Return sequence data
+
+        Args:
+            session: Current conversation state
+            parameters: Tool parameters including company, role, context
+
+        Returns:
+            Dict: Success status and generated sequence data
+        """
+
+        # Update user info incase the edit instruction has new values for user info
         session.user_info.company = parameters.get("company")
         session.user_info.role = parameters.get("role")
         session.user_info.industry = parameters.get("industry")
@@ -371,7 +475,28 @@ class ToolManager:
     def _edit_sequence(
         self, session: ConversationState, edit_type: EditType, parameters: Dict
     ) -> Dict:
-        """Edits messages in the sequence"""
+        """
+        Intelligently edit or add messages to existing sequences.
+
+        This tool handles both editing existing messages and adding new ones
+        based on natural language instructions. It maintains context continuity
+        and applies AI-powered content modifications.
+
+        Edit Process:
+        1. Update user info if new context provided
+        2. Apply edit/add instruction using AI
+        3. Update session state and phase
+        4. Emit real-time update to frontend
+        5. Return updated sequence
+
+        Args:
+            session: Current conversation state
+            edit_type: Type of edit operation (Edit/Add)
+            parameters: Tool parameters including instructions and context
+
+        Returns:
+            Dict: Success status and updated sequence data
+        """
         # Update user info only if the key exists in parameters
         if "company" in parameters:
             session.user_info.company = parameters["company"]
@@ -416,7 +541,26 @@ class ToolManager:
     def _delete_sequence(
         self, session: ConversationState, parameters: Dict
     ) -> List[OutreachMessage]:
-        """Delete a message from the sequence"""
+        """
+        Delete specific messages from sequence with intelligent reordering.
+
+        This tool removes messages by ID and automatically reorders the
+        remaining sequence to maintain proper flow and numbering.
+
+        Deletion Process:
+        1. Identify message by ID
+        2. Remove from sequence
+        3. Reorder remaining messages
+        4. Update session state
+        5. Emit real-time update
+
+        Args:
+            session: Current conversation state
+            parameters: Tool parameters including message_id
+
+        Returns:
+            Dict: Success status and updated sequence data
+        """
 
         message_id = parameters["message_id"]
         print(f"Deleting message with ID: {message_id}")
@@ -446,7 +590,25 @@ class ToolManager:
 
     # TODO: check if it handles when user enters yes. and next line says but want edits
     def _finalize_sequence(self, session: ConversationState) -> Dict:
-        """Record user final approval decision"""
+        """
+        Finalize and persist approved sequences to database.
+
+        This tool represents the final step in the recruitment workflow,
+        saving the completed sequence to persistent storage for future use.
+
+        Finalization Process:
+        1. Update session phase to finalized
+        2. Save session metadata to database
+        3. Create outreach_message table if needed
+        4. Persist all sequence messages
+        5. Commit transaction with rollback on error
+
+        Args:
+            session: Current conversation state with approved sequence
+
+        Returns:
+            Dict: Success status and confirmation message
+        """
         session.current_phase = "finalize_sequence"
 
         import sqlite3
@@ -514,7 +676,26 @@ class ToolManager:
         }
 
     def _create_message_sequence(self, user_info: UserInfo) -> List[OutreachMessage]:
-        """Create a sequence of outreach messages using OpenAI"""
+        """
+        Generate AI-powered outreach sequence with structured output.
+
+        This method creates a complete recruitment sequence using OpenAI
+        with structured output validation via the Instructor library.
+
+        Sequence Generation:
+        1. Build comprehensive context prompt
+        2. Call OpenAI with structured output requirements
+        3. Parse and validate response using Instructor
+        4. Create OutreachMessage objects with unique IDs
+        5. Return ordered sequence or fallback on error
+
+        Args:
+            user_info: User context for personalization
+
+        Returns:
+            List[OutreachMessage]: Generated sequence of outreach messages
+        """
+
         prompt = f"""
         Create a sequence of 4-5 professional outreach messages for recruiting a {user_info.role} at {user_info.company}.
         Have place holders for candidate name. Use the following information to personalize the messages:
@@ -544,7 +725,7 @@ class ToolManager:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.7,
-                response_model=LLMOutReachMessages,
+                response_model=LLMOutReachMessages,  # Structured output validation
             )
 
             if not isinstance(response.messages, list):
@@ -695,8 +876,34 @@ class ToolManager:
 # AI Agent
 # =============================================================================
 
+"""
+RecruiterAgent - Core Agentic AI System
+
+This is the heart of HELIX's agentic architecture, implementing autonomous decision-making
+without relying on existing agentic frameworks. 
+"""
+
 
 class RecruiterAgent:
+    """
+    Core agentic AI system for recruitment assistance.
+
+    This agent autonomously decides between conversational responses and tool execution,
+    managing the entire recruitment workflow from information gathering to sequence finalization.
+
+    The agent implements a custom agentic pattern:
+    1. Process user input with full conversation context
+    2. Let LLM autonomously decide: continue conversation OR execute tools
+    3. Handle tool execution with real-time feedback
+    4. Maintain session state and conversation continuity
+    5. Provide intelligent follow-up responses
+
+    Attributes:
+        state_manager: Manages session state and conversation history
+        tool_manager: Handles tool schema definition and execution
+        socket_manager: Provides real-time communication to frontend
+    """
+
     def __init__(
         self,
         state_manager: StateManager,
@@ -708,7 +915,27 @@ class RecruiterAgent:
         self.socket_manager = socket_manager
 
     def process_message(self, session_id: str, user_message: str) -> str:
-        """Process user message and generate response"""
+        """
+        Main agentic processing loop - the core of autonomous decision-making.
+
+        This method implements the key agentic pattern:
+        1. Builds comprehensive conversation context
+        2. Presents LLM with both conversation and tool options
+        3. Lets LLM autonomously decide the appropriate response type
+        4. Handles tool execution with real-time feedback
+        5. Maintains conversation flow and state
+
+        Args:
+            session_id: Unique identifier for user session
+            user_message: Latest user input to process
+
+        Returns:
+            str: Agent's response (conversational or tool execution summary)
+
+        Agentic Decision Flow:
+            User Input → Context Building → LLM Decision → Tool Execution OR Conversation → Response
+        """
+
         session = self.state_manager.get_session(session_id)
         if not session:
             return "Session not found. Please start a new conversation."
@@ -734,9 +961,10 @@ class RecruiterAgent:
 
             # Handle tool calls
             if response_message.tool_calls:
+                # LLM chose tool execution - handle agentic tool workflow
                 return self._handle_tool_calls(session, response_message)
             else:
-                # Regular conversation response
+                # LLM chose conversation - continue chat flow
                 assistant_response = response_message.content
                 self.state_manager.add_message_to_history(
                     session_id=session_id, role="assistant", content=assistant_response
@@ -748,9 +976,26 @@ class RecruiterAgent:
             return "I apologize, but I encountered an error processing your request. Please try again."
 
     def _build_conversation_context(self, session: ConversationState) -> List[Dict]:
-        """Build conversation context for OpenAI"""
+        """
+        Builds comprehensive context for agentic decision-making.
+
+        This method creates the full context that enables the agent to make
+        intelligent decisions about conversation flow and tool usage.
+
+        Context includes:
+        - System instructions for agentic behavior
+        - Complete conversation history
+        - Current session state and user information
+        - Available message sequences and their status
+
+        Args:
+            session: Current conversation state
+
+        Returns:
+            List[Dict]: Formatted messages for LLM context
+        """
         system_prompt = """You are a professional recruiter assistant. Your job is to:
-        1. Gather information about the company and role the user wants to recruit for.
+        1. Gather information about the company and role the user wants to recruit for. Do not ask for these details if they are already provided in the current session info.
         2. Generate personalized outreach message sequences.
         3. Help users edit and refine their outreach messages when needed.
         
@@ -776,7 +1021,7 @@ class RecruiterAgent:
 
         messages.extend(session.conversation_history)
 
-        # Add current context
+        # Add current session context for informed decision-making
         context = f"""
         Current session info:
         - Phase: {session.current_phase}
@@ -795,7 +1040,26 @@ class RecruiterAgent:
         return messages
 
     def _handle_tool_calls(self, session: ConversationState, response_message) -> str:
-        """Handle OpenAI tool calls"""
+        """
+        Handles agentic tool execution workflow.
+
+        This method manages the complete tool execution cycle:
+        1. Logs tool calls for conversation continuity
+        2. Executes tools with real-time user feedback
+        3. Processes tool results and errors
+        4. Provides intelligent follow-up responses
+        5. Maintains agentic workflow progression
+
+        Args:
+            session: Current conversation state
+            response_message: LLM response containing tool calls
+
+        Returns:
+            str: Summary of tool execution and next steps
+
+        Agentic Tool Workflow:
+            Tool Decision → Real-time Feedback → Execution → Result Processing → Follow-up
+        """
         tool_results = []
 
         # Add tool call messages to history
@@ -820,6 +1084,7 @@ class RecruiterAgent:
         for tool_call in response_message.tool_calls:
             tool_name = tool_call.function.name
 
+            # Provide real-time feedback to user about tool execution
             self.socket_manager.emit_tool_call(
                 session.session_id,
                 USER_FRIENDLY_TOOL_CALL.get(tool_name, "Executing tool..."),
@@ -847,8 +1112,8 @@ class RecruiterAgent:
                 tool_results.append({"error": "Invalid tool parameters"})
 
                 # Call LLM again with tool call results and past messages
-            # and ask it to summarize what has been done so far
-            # Seek confirmation from user to approve the sequence
+
+        # Generate intelligent follow-up based on tool execution results
         if session.current_phase != "finalize_sequence":
             follow_up_prompt = {
                 "role": "system",
